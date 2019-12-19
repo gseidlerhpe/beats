@@ -46,6 +46,7 @@ https://github.com/elastic/beats/compare/v6.6.2...6.6[Check the HEAD diff]
 *Metricbeat*
 
 - Fix parsing error using GET in Jolokia module. {pull}11075[11075] {issue}11071[11071]
+- kubernetes.container.cpu.limit.cores and kubernetes.container.cpu.requests.cores are now floats. {issue}11975[11975]
 
 *Packetbeat*
 
