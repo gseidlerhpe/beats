@@ -38,8 +38,8 @@ var (
 	}.Build()
 
 	mapping = &p.MetricsMapping{
+		FamilyPrefix: []string{"kube_node"},
 		Metrics: map[string]p.MetricMap{
-			"kube_node_info":                            p.InfoMetric(),
 			"kube_node_status_allocatable_pods":         p.Metric("pod.allocatable.total"),
 			"kube_node_status_capacity_pods":            p.Metric("pod.capacity.total"),
 			"kube_node_status_capacity_memory_bytes":    p.Metric("memory.capacity.bytes"),
@@ -52,6 +52,9 @@ var (
 				p.OpFilter(map[string]string{
 					"condition": "Ready",
 				})),
+		},
+		InfoMetrics: map[string]p.MetricMap{
+			"kube_node_info": p.InfoMetric(),
 		},
 
 		Labels: map[string]p.LabelMap{

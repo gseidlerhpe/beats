@@ -19,6 +19,7 @@ package state_container
 
 import (
 	"github.com/elastic/beats/libbeat/common"
+	"github.com/elastic/beats/libbeat/logp"
 	p "github.com/elastic/beats/metricbeat/helper/prometheus"
 	"github.com/elastic/beats/metricbeat/mb"
 	"github.com/elastic/beats/metricbeat/mb/parse"
@@ -40,9 +41,10 @@ var (
 
 	// Mapping of state metrics
 	mapping = &p.MetricsMapping{
+		MetricSetName: "state_container",
+		FamilyPrefix:  []string{"kube_pod_container", "kube_pod_info"},
+
 		Metrics: map[string]p.MetricMap{
-			"kube_pod_info":                                     p.InfoMetric(),
-			"kube_pod_container_info":                           p.InfoMetric(),
 			"kube_pod_container_resource_limits_cpu_cores":      p.Metric("cpu.limit.cores"),
 			"kube_pod_container_resource_requests_cpu_cores":    p.Metric("cpu.request.cores"),
 			"kube_pod_container_resource_limits_memory_bytes":   p.Metric("memory.limit.bytes"),
@@ -56,6 +58,10 @@ var (
 			"kube_pod_container_status_terminated_reason":       p.LabelMetric("status.reason", "reason"),
 			"kube_pod_container_status_waiting_reason":          p.LabelMetric("status.reason", "reason"),
 		},
+		InfoMetrics: map[string]p.MetricMap{
+			"kube_pod_info":           p.InfoMetric(),
+			"kube_pod_container_info": p.InfoMetric(),
+		},
 
 		Labels: map[string]p.LabelMap{
 			"pod":       p.KeyLabel(mb.ModuleDataKey + ".pod.name"),
@@ -65,6 +71,18 @@ var (
 			"node":         p.Label(mb.ModuleDataKey + ".node.name"),
 			"container_id": p.Label("id"),
 			"image":        p.Label("image"),
+		},
+
+		KeyLabels: p.KeyLabelKeys{
+			Primary: map[string]struct{}{
+				"pod":       struct{}{},
+				"namespace": struct{}{},
+				"container": struct{}{},
+			},
+			Secondary: map[string]struct{}{
+				"pod":       struct{}{},
+				"namespace": struct{}{},
+			},
 		},
 
 		ExtraFields: map[string]string{
@@ -110,13 +128,16 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 // It returns the event which is then forward to the output. In case of an error, a
 // descriptive error must be returned.
 func (m *MetricSet) Fetch() ([]common.MapStr, error) {
+	logp.Debug("state_container", ">>> Fetch")
 	m.enricher.Start()
-
+	logp.Debug("state_container", "Calling m.prometheus.GetProcessedMetrics")
 	events, err := m.prometheus.GetProcessedMetrics(mapping)
 	if err != nil {
+		logp.Err("Failed m.prometheus.GetProcessedMetrics %v", err)
 		return nil, err
 	}
 
+	logp.Debug("state_container", "Calling m.enricher.Enrich")
 	m.enricher.Enrich(events)
 
 	// Calculate deprecated nanocores values
@@ -133,7 +154,7 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 			}
 		}
 	}
-
+	logp.Debug("state_container", "<<< Fetch state_container events: %d, error=%v", len(events), err)
 	return events, err
 }
 

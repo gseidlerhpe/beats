@@ -38,11 +38,15 @@ var (
 	}.Build()
 
 	mapping = &p.MetricsMapping{
+		MetricSetName: "state_pod",
+		FamilyPrefix:  []string{"kube_pod_status", "kube_pod_info"},
 		Metrics: map[string]p.MetricMap{
-			"kube_pod_info":             p.InfoMetric(),
 			"kube_pod_status_phase":     p.LabelMetric("status.phase", "phase", p.OpLowercaseValue()),
 			"kube_pod_status_ready":     p.LabelMetric("status.ready", "condition", p.OpLowercaseValue()),
 			"kube_pod_status_scheduled": p.LabelMetric("status.scheduled", "condition", p.OpLowercaseValue()),
+		},
+		InfoMetrics: map[string]p.MetricMap{
+			"kube_pod_info": p.InfoMetric(),
 		},
 
 		Labels: map[string]p.LabelMap{

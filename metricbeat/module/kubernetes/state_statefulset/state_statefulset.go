@@ -38,6 +38,7 @@ var (
 	}.Build()
 
 	mapping = &p.MetricsMapping{
+		FamilyPrefix: []string{"kube_statefulset"},
 		Metrics: map[string]p.MetricMap{
 			"kube_statefulset_created":                    p.Metric("created"),
 			"kube_statefulset_metadata_generation":        p.Metric("generation.desired"),

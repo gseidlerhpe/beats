@@ -39,13 +39,16 @@ var (
 	}.Build()
 
 	mapping = &p.MetricsMapping{
+		FamilyPrefix: []string{"kube_deployment"},
 		Metrics: map[string]p.MetricMap{
-			"kube_deployment_metadata_generation":         p.InfoMetric(),
 			"kube_deployment_status_replicas_updated":     p.Metric("replicas.updated"),
 			"kube_deployment_status_replicas_unavailable": p.Metric("replicas.unavailable"),
 			"kube_deployment_status_replicas_available":   p.Metric("replicas.available"),
 			"kube_deployment_spec_replicas":               p.Metric("replicas.desired"),
 			"kube_deployment_spec_paused":                 p.BooleanMetric("paused"),
+		},
+		InfoMetrics: map[string]p.MetricMap{
+			"kube_deployment_metadata_generation": p.InfoMetric(),
 		},
 
 		Labels: map[string]p.LabelMap{
