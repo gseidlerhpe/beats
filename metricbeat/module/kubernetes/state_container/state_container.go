@@ -19,6 +19,7 @@ package state_container
 
 import (
 	"github.com/elastic/beats/libbeat/common"
+	"github.com/elastic/beats/libbeat/logp"
 	p "github.com/elastic/beats/metricbeat/helper/prometheus"
 	"github.com/elastic/beats/metricbeat/mb"
 	"github.com/elastic/beats/metricbeat/mb/parse"
@@ -89,6 +90,7 @@ type MetricSet struct {
 	mb.BaseMetricSet
 	prometheus p.Prometheus
 	enricher   util.Enricher
+	log        *logp.Logger
 }
 
 // New create a new instance of the MetricSet
@@ -103,6 +105,7 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 		BaseMetricSet: base,
 		prometheus:    prometheus,
 		enricher:      util.NewContainerMetadataEnricher(base, false),
+		log:           logp.NewLogger("state_container"),
 	}, nil
 }
 
@@ -110,13 +113,16 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 // It returns the event which is then forward to the output. In case of an error, a
 // descriptive error must be returned.
 func (m *MetricSet) Fetch() ([]common.MapStr, error) {
+	logp.Debug("state_container", ">>> Fetch")
 	m.enricher.Start()
-
+	logp.Debug("state_container", "Calling m.prometheus.GetProcessedMetrics")
 	events, err := m.prometheus.GetProcessedMetrics(mapping)
 	if err != nil {
+		logp.Err("Failed m.prometheus.GetProcessedMetrics %v", err)
 		return nil, err
 	}
 
+	logp.Debug("state_container", "Calling m.enricher.Enrich")
 	m.enricher.Enrich(events)
 
 	// Calculate deprecated nanocores values
@@ -133,7 +139,8 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 			}
 		}
 	}
-
+	logp.Debug("state_container", "state_container events: %v, error=%v", events, err)
+	logp.Debug("state_container", "<<< Fetch")
 	return events, err
 }
 
