@@ -19,7 +19,7 @@ package state_container
 
 import (
 	"github.com/elastic/beats/libbeat/common"
-	p "github.com/elastic/beats/metricbeat/helper/prometheus"
+	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/metricbeat/mb"
 	"github.com/elastic/beats/metricbeat/mb/parse"
 	"github.com/elastic/beats/metricbeat/module/kubernetes/util"
@@ -89,6 +89,7 @@ type MetricSet struct {
 	mb.BaseMetricSet
 	prometheus p.Prometheus
 	enricher   util.Enricher
+	log        *logp.Logger
 }
 
 // New create a new instance of the MetricSet
@@ -103,6 +104,7 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 		BaseMetricSet: base,
 		prometheus:    prometheus,
 		enricher:      util.NewContainerMetadataEnricher(base, false),
+		log:           logp.NewLogger("state_container"),
 	}, nil
 }
 
@@ -114,6 +116,7 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 
 	events, err := m.prometheus.GetProcessedMetrics(mapping)
 	if err != nil {
+		m.log.Errorw("Failed m.prometheus.GetProcessedMetrics", "error", err)
 		return nil, err
 	}
 
@@ -133,7 +136,7 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 			}
 		}
 	}
-
+	m.log("state_container events: ", "events", events, "error", err)
 	return events, err
 }
 
