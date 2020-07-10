@@ -110,7 +110,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 	if err != nil {
 		return nil, err
 	}
-
+	logp.Debug("prometheus", "  GetProcessedMetrics: got families %v", families)
 	eventsMap := map[string]common.MapStr{}
 	infoMetrics := []*infoMetricData{}
 	for _, family := range families {
@@ -119,6 +119,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 
 			// Ignore unknown metrics
 			if !ok {
+				logp.Debug("prometheus", "  GetProcessedMetrics: unknown metric %v", family.GetName())
 				continue
 			}
 
@@ -127,6 +128,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 
 			// Ignore retrieval errors (bad conf)
 			if value == nil {
+				logp.Debug("prometheus", "  GetProcessedMetrics: invalid metric value %v", family.GetName())
 				continue
 			}
 
@@ -166,7 +168,6 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 				event.DeepUpdate(labels)
 			}
 		}
-		logp.Debug("prometheus", "<<< GetProcessedMetrics")
 	}
 
 	// populate events array from values in eventsMap
@@ -199,6 +200,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 		}
 	}
 
+	logp.Debug("prometheus", "<<< GetProcessedMetrics events %v", events)
 	return events, nil
 
 }
