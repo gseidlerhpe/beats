@@ -20,6 +20,7 @@ package state_container
 import (
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/libbeat/logp"
+	p "github.com/elastic/beats/metricbeat/helper/prometheus"
 	"github.com/elastic/beats/metricbeat/mb"
 	"github.com/elastic/beats/metricbeat/mb/parse"
 	"github.com/elastic/beats/metricbeat/module/kubernetes/util"
@@ -136,7 +137,7 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 			}
 		}
 	}
-	m.log("state_container events: ", "events", events, "error", err)
+	m.log.Debugw("state_container events: ", "events", events, "error", err)
 	return events, err
 }
 
