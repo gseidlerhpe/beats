@@ -115,13 +115,14 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 	logp.Debug("state_container", ">>> Fetch")
 	m.enricher.Start()
-
+	logp.Debug("state_container", "Calling m.prometheus.GetProcessedMetrics")
 	events, err := m.prometheus.GetProcessedMetrics(mapping)
 	if err != nil {
 		logp.Err("Failed m.prometheus.GetProcessedMetrics %v", err)
 		return nil, err
 	}
 
+	logp.Debug("state_container", "Calling m.enricher.Enrich")
 	m.enricher.Enrich(events)
 
 	// Calculate deprecated nanocores values

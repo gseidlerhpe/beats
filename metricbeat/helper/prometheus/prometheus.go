@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 
 	"github.com/elastic/beats/libbeat/common"
+	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/metricbeat/helper"
 	"github.com/elastic/beats/metricbeat/mb"
 )
@@ -104,6 +105,7 @@ type MetricsMapping struct {
 }
 
 func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapStr, error) {
+	logp.Debug("prometheus", ">>> GetProcessedMetrics")
 	families, err := p.GetFamilies()
 	if err != nil {
 		return nil, err
@@ -164,6 +166,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 				event.DeepUpdate(labels)
 			}
 		}
+		logp.Debug("prometheus", "<<< GetProcessedMetrics")
 	}
 
 	// populate events array from values in eventsMap
