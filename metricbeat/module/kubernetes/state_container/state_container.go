@@ -113,6 +113,7 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 // It returns the event which is then forward to the output. In case of an error, a
 // descriptive error must be returned.
 func (m *MetricSet) Fetch() ([]common.MapStr, error) {
+	m.log.Debug(">>> state_container Fetch")
 	m.enricher.Start()
 
 	events, err := m.prometheus.GetProcessedMetrics(mapping)
@@ -137,6 +138,7 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 			}
 		}
 	}
+	m.log.Debug("<<< state_container Fetch")
 	m.log.Debugw("state_container events: ", "events", events, "error", err)
 	return events, err
 }
