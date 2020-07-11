@@ -55,6 +55,7 @@ func NewPrometheusClient(base mb.BaseMetricSet) (Prometheus, error) {
 	if err != nil {
 		return nil, err
 	}
+	logp.Debug("prometheus", "HTTP client %v", http)
 	return &prometheus{http}, nil
 }
 
@@ -108,18 +109,26 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 	logp.Debug("prometheus", ">>> GetProcessedMetrics")
 	families, err := p.GetFamilies()
 	if err != nil {
+		logp.Debug("prometheus", "  GetProcessedMetrics: GetFamilies error %v", err)
 		return nil, err
 	}
 	logp.Debug("prometheus", "  GetProcessedMetrics: got families %v", families)
 	eventsMap := map[string]common.MapStr{}
 	infoMetrics := []*infoMetricData{}
+	dbgCount := -1
+	dbgCount1 := -1
 	for _, family := range families {
 		for _, metric := range family.GetMetric() {
 			m, ok := mapping.Metrics[family.GetName()]
 
 			// Ignore unknown metrics
 			if !ok {
-				logp.Debug("prometheus", "  GetProcessedMetrics: unknown metric %v", family.GetName())
+				if family.GetName() == "kube_pod_container_resource_limits_cpu_cores" {
+					dbgCount++
+					if dbgCount%1000 == 0 {
+						logp.Debug("prometheus", "  GetProcessedMetrics: kube_pod_container_resource_limits_cpu_cores unknown for %v", family)
+					}
+				}
 				continue
 			}
 
@@ -128,7 +137,12 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 
 			// Ignore retrieval errors (bad conf)
 			if value == nil {
-				logp.Debug("prometheus", "  GetProcessedMetrics: invalid metric value %v", family.GetName())
+				if family.GetName() == "kube_pod_container_resource_limits_cpu_cores" {
+					dbgCount1++
+					if dbgCount1%1000 == 0 {
+						logp.Debug("prometheus", "  GetProcessedMetrics: kube_pod_container_resource_limits_cpu_cores invalid metric value for %v", family)
+					}
+				}
 				continue
 			}
 
