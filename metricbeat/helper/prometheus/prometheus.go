@@ -136,7 +136,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 				if doDbg && family.GetName() == "kube_pod_container_resource_limits_cpu_cores" {
 					dbgCount++
 					if dbgCount%1000 == 0 {
-						logp.Debug("prometheus", "  GetProcessedMetrics: kube_pod_container_resource_limits_cpu_cores unknown mapping (cnt=%d): family metric: %v", dbgCount, mapping, metric)
+						logp.Debug("prometheus", "  GetProcessedMetrics: kube_pod_container_resource_limits_cpu_cores unknown mapping (cnt=%d): family metric: %v", dbgCount, metric)
 					}
 				}
 				continue
