@@ -62,11 +62,14 @@ func NewPrometheusClient(base mb.BaseMetricSet) (Prometheus, error) {
 
 // GetFamilies requests metric families from prometheus endpoint and returns them
 func (p *prometheus) GetFamilies() ([]*dto.MetricFamily, error) {
+	startNanos := time.Now().UnixNano()
 	resp, err := p.FetchResponse()
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	endNanos := time.Now().UnixNano()
+	logp.Debug("prometheus", "FetchResponse took: %d ms", (endNanos-startNanos)/1000000)
 
 	format := expfmt.ResponseFormat(resp.Header)
 	if format == "" {
@@ -90,7 +93,8 @@ func (p *prometheus) GetFamilies() ([]*dto.MetricFamily, error) {
 			families = append(families, mf)
 		}
 	}
-
+	endNanos = time.Now().UnixNano()
+	logp.Debug("prometheus", "GetFamilies took: %d ms", (endNanos-startNanos)/1000000)
 	return families, nil
 }
 
