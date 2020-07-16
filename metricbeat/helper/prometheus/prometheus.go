@@ -56,7 +56,7 @@ func NewPrometheusClient(base mb.BaseMetricSet) (Prometheus, error) {
 	if err != nil {
 		return nil, err
 	}
-	logp.Debug("prometheus", "HTTP client %v", http)
+	logp.Debug("prometheus", "HTTP client %v", http.GetClient())
 	return &prometheus{http}, nil
 }
 
@@ -225,7 +225,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 	}
 	endNanos := time.Now().UnixNano()
 	if doDbg {
-		logp.Debug("prometheus", "<<< GetProcessedMetrics %v: took: %d ms, events %v", mappingMetricsKeys, (endNanos-startNanos)/1000000, events)
+		logp.Debug("prometheus", "<<< GetProcessedMetrics took: %d ms, events %v", (endNanos-startNanos)/1000000, len(events))
 	}
 	return events, nil
 
