@@ -18,7 +18,12 @@
 package beater
 
 import (
+	"log"
+	"net/http"
 	"sync"
+
+	// Add profiling support
+	_ "net/http/pprof"
 
 	"github.com/elastic/beats/libbeat/common/reload"
 	"github.com/elastic/beats/libbeat/management"
@@ -180,6 +185,11 @@ func newMetricbeat(b *beat.Beat, c *common.Config, options ...Option) (*Metricbe
 			return nil, err
 		}
 	}
+
+	// TODO: Allow the profiling server to be enabled via a config flag and get host and port from config
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	return metricbeat, nil
 }

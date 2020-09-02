@@ -56,7 +56,7 @@ func NewPrometheusClient(base mb.BaseMetricSet) (Prometheus, error) {
 	if err != nil {
 		return nil, err
 	}
-	logp.Debug("prometheus", "HTTP client %v", http.GetClient())
+
 	return &prometheus{http}, nil
 }
 
@@ -111,38 +111,22 @@ type MetricsMapping struct {
 }
 
 func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapStr, error) {
-	mappingMetricsKeys := make([]string, 0, len(mapping.Metrics))
-	for k := range mapping.Metrics {
-		mappingMetricsKeys = append(mappingMetricsKeys, k)
-	}
-	_, doDbg := mapping.Metrics["kube_pod_container_resource_limits_cpu_cores"]
-	if doDbg {
-		logp.Debug("prometheus", ">>> GetProcessedMetrics")
-	}
-
 	startNanos := time.Now().UnixNano()
+	logp.Debug("prometheus", ">>> GetProcessedMetrics")
+
 	families, err := p.GetFamilies()
 	if err != nil {
-		logp.Debug("prometheus", "  GetProcessedMetrics: mappings: %v GetFamilies error %v", mappingMetricsKeys, err)
 		return nil, err
 	}
 
 	eventsMap := map[string]common.MapStr{}
 	infoMetrics := []*infoMetricData{}
-	dbgCount := -1
-	dbgCount1 := -1
 	for _, family := range families {
 		for _, metric := range family.GetMetric() {
 			m, ok := mapping.Metrics[family.GetName()]
 
 			// Ignore unknown metrics
 			if !ok {
-				if doDbg && family.GetName() == "kube_pod_container_resource_limits_cpu_cores" {
-					dbgCount++
-					if dbgCount%1000 == 0 {
-						logp.Debug("prometheus", "  GetProcessedMetrics: kube_pod_container_resource_limits_cpu_cores unknown mapping (cnt=%d): family metric: %v", dbgCount, metric)
-					}
-				}
 				continue
 			}
 
@@ -151,12 +135,6 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 
 			// Ignore retrieval errors (bad conf)
 			if value == nil {
-				if doDbg && family.GetName() == "kube_pod_container_resource_limits_cpu_cores" {
-					dbgCount1++
-					if dbgCount1%1000 == 0 {
-						logp.Debug("prometheus", "  GetProcessedMetrics: kube_pod_container_resource_limits_cpu_cores invalid metric value (cnt=%d) for family metric %v", dbgCount1, metric)
-					}
-				}
 				continue
 			}
 
@@ -228,9 +206,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 		}
 	}
 	endNanos := time.Now().UnixNano()
-	if doDbg {
-		logp.Debug("prometheus", "<<< GetProcessedMetrics took: %d ms, events %v", (endNanos-startNanos)/1000000, len(events))
-	}
+	logp.Debug("prometheus", "<<< GetProcessedMetrics took: %d ms, events %d", (endNanos-startNanos)/1000000, len(events))
 	return events, nil
 
 }
