@@ -23,13 +23,11 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 
 	"github.com/elastic/beats/libbeat/common"
-	"github.com/elastic/beats/libbeat/logp"
 	"github.com/elastic/beats/metricbeat/helper"
 	"github.com/elastic/beats/metricbeat/mb"
 )
@@ -66,20 +64,16 @@ func NewPrometheusClient(base mb.BaseMetricSet) (Prometheus, error) {
 	if err != nil {
 		return nil, err
 	}
-	logp.Debug("prometheus", "HTTP client %v", http.GetClient())
 	return &prometheus{http}, nil
 }
 
 // GetFamilies requests metric families from prometheus endpoint and returns them
 func (p *prometheus) GetFamilies(familyPrefix []string) ([]*dto.MetricFamily, error) {
-	startNanos := time.Now().UnixNano()
 	resp, err := p.FetchResponse()
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	endNanos := time.Now().UnixNano()
-	logp.Debug("prometheus", "FetchResponse took: %d ms", (endNanos-startNanos)/1000000)
 
 	format := expfmt.ResponseFormat(resp.Header)
 	if format == "" {
@@ -135,32 +129,8 @@ func (p *prometheus) GetFamilies(familyPrefix []string) ([]*dto.MetricFamily, er
 			wg.Done()
 		}(count)
 	}
-	logp.Debug("prometheus", "GetFamilies waiting for %d sub fun to complete", count)
 	wg.Wait()
 
-	// org code
-	// for {
-	// 	mf := &dto.MetricFamily{}
-	// 	err = decoder.Decode(mf)
-	// 	if err != nil {
-	// 		if err == io.EOF {
-	// 			break
-	// 		}
-	// 	} else {
-	// 		if familyPrefix == nil {
-	// 			families = append(families, mf)
-	// 		} else {
-	// 			for _, prefix := range familyPrefix {
-	// 				if strings.HasPrefix(mf.GetName(), prefix) {
-	// 					families = append(families, mf)
-	// 					break
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
-	endNanos = time.Now().UnixNano()
-	logp.Debug("prometheus", "GetFamilies took: %d ms Got Families %d", (endNanos-startNanos)/1000000, len(families))
 	return families, nil
 }
 
@@ -197,29 +167,7 @@ type MetricsMapping struct {
 	ExtraFields map[string]string
 }
 
-func isDbgMetrics(mapping *MetricsMapping) (bool, string) {
-	//dbgMetrics := map[string]string{"kube_node_info": "state_node", "kube_pod_container_info": "state_container", "kube_pod_info": "state_pod"}
-	dbgMetrics := [2]string{"state_container", "state_pod"}
-	doDbg := false
-	metricSet := ""
-	for _, m := range dbgMetrics {
-		if mapping.MetricSetName == m {
-			return true, m
-		}
-	}
-
-	return doDbg, metricSet
-
-}
-
 func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*dto.MetricFamily) {
-	doDbg, metricSet := isDbgMetrics(mapping)
-
-	if doDbg {
-		logp.Debug("prometheus", ">>> processMetrics %s", metricSet)
-	}
-
-	startNanos := time.Now().UnixNano()
 	for _, family := range families {
 		var wg sync.WaitGroup
 
@@ -227,17 +175,12 @@ func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*
 			continue
 		}
 
-		if doDbg {
-			logp.Debug("prometheus", "processMetrics %s, family=%s, family metrics=%d", metricSet, family.GetName(), len(family.GetMetric()))
-		}
-
 		familyMetrics := family.GetMetric()
 		sliceSize := len(familyMetrics)
 		if sliceSize > maxMetricsSliceSize {
 			sliceSize = maxMetricsSliceSize
 		}
-		threadCount := 0
-		startMetricsNanos := time.Now().UnixNano()
+
 		for i := 0; i < len(familyMetrics); i += sliceSize {
 			var slice []*dto.Metric
 			if i+sliceSize < len(familyMetrics) {
@@ -246,13 +189,8 @@ func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*
 				slice = familyMetrics[i:]
 			}
 			wg.Add(1)
-			threadCount++
-			go func(idMetric int, metrics []*dto.Metric) {
-				startProcessMetricsNanos := time.Now().UnixNano()
-				if doDbg {
-					logp.Debug("prometheus", ">>>>>> processMetrics %s, idMetric=%d, family=%s, metrics=%d", metricSet, idMetric, family.GetName(), len(metrics))
-				}
 
+			go func(idMetric int, metrics []*dto.Metric) {
 				for _, metric := range metrics {
 					m, ok := mapping.Metrics[family.GetName()]
 
@@ -280,51 +218,20 @@ func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*
 					if field != "" {
 						// Put it in the event if it's a common metric
 						_, event := eventsMap.getOrCreateEvent(primaryKeyLabels, secondaryKeyLabels)
-						// if doDbg {
-						// 	if isNew {
-						// 		logp.Debug("prometheus", "processMetrics %s, idMetric=%d, family=%s, family metric=%v, New event keyLabels=%v, %v event=%v with %s,%v and labels %v", metricSet, idMetric, family.GetName(), metric, primaryKeyLabels, secondaryKeyLabels, event, field, value, labels)
-						// 	} else {
-						// 		logp.Debug("prometheus", "processMetrics %s, idMetric=%d, family=%s, family metric=%v, Update event keyLabels=%v, %v event=%v with %s,%v and labels %v", metricSet, idMetric, family.GetName(), metric, primaryKeyLabels, secondaryKeyLabels, event, field, value, labels)
-						// 	}
-
-						// }
 						eventsMap.updateEvent(event, field, value, labels)
 					}
 				}
-				endProcessMetricsNanos := time.Now().UnixNano()
-				if doDbg {
-					logp.Debug("prometheus", "<<<<<< processMetrics %s, idMetric=%d, family=%s, metrics=%d took: %d ms, events=%d", metricSet, idMetric, family.GetName(), len(metrics), (endProcessMetricsNanos-startProcessMetricsNanos)/1000000, len(eventsMap.events))
-				}
 				wg.Done()
 			}(i, slice)
-		}
-		if doDbg {
-			logp.Debug("prometheus", "processMetrics %s, family=%s, family metrics=%d waiting for %d threads to complete...", metricSet, family.GetName(), len(family.GetMetric()), threadCount)
-		}
-		wg.Wait()
-		endMetricsNanos := time.Now().UnixNano()
-		if doDbg {
-			logp.Debug("prometheus", "processMetrics %s, family=%s, family metrics=%d %d threads took %d ms to complete", metricSet, family.GetName(), len(family.GetMetric()), threadCount, (endMetricsNanos-startMetricsNanos)/1000000)
-		}
 
+		}
 	}
-
-	endNanos := time.Now().UnixNano()
-	if doDbg {
-		logp.Debug("prometheus", "<<< processMetrics %s took: %d ms, events %d", metricSet, (endNanos-startNanos)/1000000, len(eventsMap.events))
-	}
-
 }
 
 func processInfoMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*dto.MetricFamily) {
 	infoMetrics := []*infoMetricData{}
 	var infoMetricsMutex = &sync.Mutex{}
-	doDbg, metricSet := isDbgMetrics(mapping)
 
-	if doDbg {
-		logp.Debug("prometheus", ">>> processInfoMetrics %s", metricSet)
-	}
-	startNanos := time.Now().UnixNano()
 	for _, family := range families {
 		var wg sync.WaitGroup
 
@@ -332,17 +239,12 @@ func processInfoMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families
 			continue
 		}
 
-		if doDbg {
-			logp.Debug("prometheus", "processInfoMetrics %s, family=%s, family metrics=%d", metricSet, family.GetName(), len(family.GetMetric()))
-		}
-
 		familyMetrics := family.GetMetric()
 		sliceSize := len(familyMetrics)
 		if sliceSize > maxMetricsSliceSize {
 			sliceSize = maxMetricsSliceSize
 		}
-		threadCount := 0
-		startMetricsNanos := time.Now().UnixNano()
+
 		for i := 0; i < len(familyMetrics); i += sliceSize {
 			var slice []*dto.Metric
 			if i+sliceSize < len(familyMetrics) {
@@ -351,12 +253,8 @@ func processInfoMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families
 				slice = familyMetrics[i:]
 			}
 			wg.Add(1)
-			threadCount++
+
 			go func(idMetric int, metrics []*dto.Metric) {
-				startProcessMetricsNanos := time.Now().UnixNano()
-				if doDbg {
-					logp.Debug("prometheus", ">>>>>> processInfoMetrics %s, idMetric=%d, family=%s, metrics=%d", metricSet, idMetric, family.GetName(), len(metrics))
-				}
 				for _, metric := range metrics {
 					m, ok := mapping.InfoMetrics[family.GetName()]
 					// Ignore unknown metrics
@@ -396,31 +294,12 @@ func processInfoMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families
 						}
 					}
 				}
-				endProcessMetricsNanos := time.Now().UnixNano()
-				if doDbg {
-					logp.Debug("prometheus", "<<<<<< processInfoMetrics %s, idMetric=%d, family=%s, metrics=%d took: %d ms, events=%d", metricSet, idMetric, family.GetName(), len(metrics), (endProcessMetricsNanos-startProcessMetricsNanos)/1000000, len(eventsMap.events))
-				}
 				wg.Done()
 			}(i, slice)
 		}
-		if doDbg {
-			logp.Debug("prometheus", "processInfoMetrics %s, family=%s, family metrics=%d waiting for %d threads to complete...", metricSet, family.GetName(), len(family.GetMetric()), threadCount)
-		}
 		wg.Wait()
-		endMetricsNanos := time.Now().UnixNano()
-		if doDbg {
-			logp.Debug("prometheus", "processInfoMetrics %s, family=%s, family metrics=%d %d threads took %d ms to complete", metricSet, family.GetName(), len(family.GetMetric()), threadCount, (endMetricsNanos-startMetricsNanos)/1000000)
-		}
-
 	}
 
-	endNanos := time.Now().UnixNano()
-	cpNanos := endNanos
-	if doDbg {
-		logp.Debug("prometheus", "processInfoMetrics %s took: %d ms, families %d, events %d, infoMetrics %d", metricSet, (endNanos-startNanos)/1000000, len(families), len(eventsMap.events), len(infoMetrics))
-	}
-
-	cpNanos = endNanos
 	// fill info from infoMetrics
 	for _, info := range infoMetrics {
 		for _, event := range eventsMap.events {
@@ -439,12 +318,6 @@ func processInfoMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families
 			}
 		}
 	}
-	endNanos = time.Now().UnixNano()
-	if doDbg {
-		logp.Debug("prometheus", "processInfoMetrics %s took: %d ms to fill %d infoMetrics into %d events", metricSet, (endNanos-cpNanos)/1000000, len(infoMetrics), len(eventsMap.events))
-		logp.Debug("prometheus", "<<< processInfoMetrics %s took: %d ms, events %d", metricSet, (endNanos-startNanos)/1000000, len(eventsMap.events))
-	}
-
 }
 
 func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapStr, error) {
@@ -454,12 +327,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 		mapMutex:   sync.Mutex{},
 		eventMutex: sync.Mutex{},
 	}
-	doDbg, metricSet := isDbgMetrics(mapping)
-	if doDbg {
-		logp.Debug("prometheus", ">>> GetProcessedMetrics %s", metricSet)
-	}
 
-	startNanos := time.Now().UnixNano()
 	families, err := p.GetFamilies(mapping.FamilyPrefix)
 	if err != nil {
 		return nil, err
@@ -467,17 +335,9 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 
 	// first process non-InfoMetrics
 	processMetrics(&eventsMap, mapping, families)
-	endNanos := time.Now().UnixNano()
-	if doDbg {
-		logp.Debug("prometheus", "  GetProcessedMetrics %s processMetrics took: %d ms, events %d", metricSet, (endNanos-startNanos)/1000000, len(eventsMap.events))
-	}
-	procNanos := time.Now().UnixNano()
+
 	// Now process infoMetrics and fill in additional info
 	processInfoMetrics(&eventsMap, mapping, families)
-	endNanos = time.Now().UnixNano()
-	if doDbg {
-		logp.Debug("prometheus", "  GetProcessedMetrics %s processInfoMetrics took: %d ms, events %d", metricSet, (endNanos-procNanos)/1000000, len(eventsMap.events))
-	}
 
 	// populate events array from values in eventsMap
 	events := make([]common.MapStr, 0, len(eventsMap.events))
@@ -494,12 +354,7 @@ func (p *prometheus) GetProcessedMetrics(mapping *MetricsMapping) ([]common.MapS
 		family.Reset()
 	}
 
-	endNanos = time.Now().UnixNano()
-	if doDbg {
-		logp.Debug("prometheus", "<<< GetProcessedMetrics %s took: %d ms, events %d", metricSet, (endNanos-startNanos)/1000000, len(events))
-	}
 	return events, nil
-
 }
 
 // infoMetricData keeps data about an infoMetric
