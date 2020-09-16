@@ -225,6 +225,7 @@ func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*
 			}(i, slice)
 
 		}
+		wg.Wait()
 	}
 }
 
