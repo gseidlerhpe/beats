@@ -209,8 +209,3 @@ func getAuthHeaderFromToken(path string) (string, error) {
 
 	return token, nil
 }
-
-// GetClient returns the client
-func (h *HTTP) GetClient() *http.Client {
-	return h.client
-}
