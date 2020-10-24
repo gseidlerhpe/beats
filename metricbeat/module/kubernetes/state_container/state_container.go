@@ -40,9 +40,7 @@ var (
 
 	// Mapping of state metrics
 	mapping = &p.MetricsMapping{
-		MetricSetName: "state_container",
-		FamilyPrefix:  []string{"kube_pod_container", "kube_pod_info"},
-
+		FamilyPrefix: []string{"kube_pod_container", "kube_pod_info"},
 		Metrics: map[string]p.MetricMap{
 			"kube_pod_container_resource_limits_cpu_cores":      p.Metric("cpu.limit.cores"),
 			"kube_pod_container_resource_requests_cpu_cores":    p.Metric("cpu.request.cores"),

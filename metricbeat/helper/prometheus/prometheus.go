@@ -95,6 +95,7 @@ func (p *prometheus) GetFamilies(familyPrefix []string) ([]*dto.MetricFamily, er
 		wg.Add(1)
 		count++
 		go func(id int) {
+			defer wg.Done()
 			for !done {
 				mf := &dto.MetricFamily{}
 				decoderMutex.Lock()
@@ -104,29 +105,29 @@ func (p *prometheus) GetFamilies(familyPrefix []string) ([]*dto.MetricFamily, er
 					if err == io.EOF {
 						done = true
 					}
+					return
+				}
+
+				if familyPrefix == nil {
+					familiesMutex.Lock()
+					families = append(families, mf)
+					familiesMutex.Unlock()
 				} else {
-					if familyPrefix == nil {
-						familiesMutex.Lock()
-						families = append(families, mf)
-						familiesMutex.Unlock()
-					} else {
-						found := false
-						for _, prefix := range familyPrefix {
-							if strings.HasPrefix(mf.GetName(), prefix) {
-								familiesMutex.Lock()
-								families = append(families, mf)
-								familiesMutex.Unlock()
-								found = true
-								break
-							}
+					found := false
+					for _, prefix := range familyPrefix {
+						if strings.HasPrefix(mf.GetName(), prefix) {
+							familiesMutex.Lock()
+							families = append(families, mf)
+							familiesMutex.Unlock()
+							found = true
+							break
 						}
-						if !found {
-							mf.Reset()
-						}
+					}
+					if !found {
+						mf.Reset()
 					}
 				}
 			}
-			wg.Done()
 		}(count)
 	}
 	wg.Wait()
@@ -145,9 +146,6 @@ type KeyLabelKeys struct {
 
 // MetricsMapping defines mapping settings for Prometheus metrics, to be used with `GetProcessedMetrics`
 type MetricsMapping struct {
-	// MetricSet Name -- for dbg
-	MetricSetName string
-
 	// Metrics Family name prefix
 	FamilyPrefix []string
 
@@ -167,11 +165,21 @@ type MetricsMapping struct {
 	ExtraFields map[string]string
 }
 
-func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*dto.MetricFamily) {
+// processFamilyMetrics
+func processFamilyMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*dto.MetricFamily, infoMetrics *infoMetrics) {
 	for _, family := range families {
 		var wg sync.WaitGroup
+		var metricMapping map[string]MetricMap
 
-		if _, ok := mapping.InfoMetrics[family.GetName()]; ok {
+		if infoMetrics != nil {
+			metricMapping = mapping.InfoMetrics
+		} else {
+			metricMapping = mapping.Metrics
+		}
+
+		// Ignore unknown metrics
+		metricMap, ok := metricMapping[family.GetName()]
+		if !ok {
 			continue
 		}
 
@@ -190,17 +198,10 @@ func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*
 			}
 			wg.Add(1)
 
-			go func(idMetric int, metrics []*dto.Metric) {
+			go func(idMetric int, metricMap MetricMap, metrics []*dto.Metric) {
 				for _, metric := range metrics {
-					m, ok := mapping.Metrics[family.GetName()]
-
-					// Ignore unknown metrics
-					if !ok {
-						continue
-					}
-
-					field := m.GetField()
-					value := m.GetValue(metric)
+					field := metricMap.GetField()
+					value := metricMap.GetValue(metric)
 
 					// Ignore retrieval errors (bad conf)
 					if value == nil {
@@ -209,100 +210,62 @@ func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*
 
 					// Apply extra options
 					allLabels := getLabels(metric)
-					for _, option := range m.GetOptions() {
+					for _, option := range metricMap.GetOptions() {
 						field, value, allLabels = option.Process(field, value, allLabels)
 					}
 
 					primaryKeyLabels, secondaryKeyLabels, labels := getLabelsByType(mapping, allLabels)
-
-					if field != "" {
-						// Put it in the event if it's a common metric
-						_, event := eventsMap.getOrCreateEvent(primaryKeyLabels, secondaryKeyLabels)
-						eventsMap.updateEvent(event, field, value, labels)
+					if infoMetrics != nil {
+						labels.DeepUpdate(primaryKeyLabels)
+						event := eventsMap.getEvent(primaryKeyLabels, secondaryKeyLabels)
+						if event != nil {
+							eventsMap.updateEvent(event, "", nil, labels)
+						} else {
+							// No matching event found!
+							// Add metrics that have additional labels for later processing only
+							if primaryKeyLabels.String() != labels.String() {
+								infoMetrics.mutex.Lock()
+								infoMetrics.data = append(infoMetrics.data, &infoMetricData{
+									Labels: primaryKeyLabels,
+									Meta:   labels,
+								})
+								infoMetrics.mutex.Unlock()
+							}
+						}
+					} else {
+						if field != "" {
+							// Put it in the event if it's a common metric
+							_, event := eventsMap.getOrCreateEvent(primaryKeyLabels, secondaryKeyLabels)
+							eventsMap.updateEvent(event, field, value, labels)
+						}
 					}
 				}
 				wg.Done()
-			}(i, slice)
+			}(i, metricMap, slice)
 
 		}
 		wg.Wait()
 	}
 }
 
+// processMetrics processes non InfoMetrics families into events and build the eventsMap
+func processMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*dto.MetricFamily) {
+	processFamilyMetrics(eventsMap, mapping, families, nil)
+}
+
+// processInfoMetrics processes the InfoMetrics families and appends the data to the metrics events
+// in the eventsMap
 func processInfoMetrics(eventsMap *eventsMaps, mapping *MetricsMapping, families []*dto.MetricFamily) {
-	infoMetrics := []*infoMetricData{}
-	var infoMetricsMutex = &sync.Mutex{}
-
-	for _, family := range families {
-		var wg sync.WaitGroup
-
-		if _, ok := mapping.Metrics[family.GetName()]; ok {
-			continue
-		}
-
-		familyMetrics := family.GetMetric()
-		sliceSize := len(familyMetrics)
-		if sliceSize > maxMetricsSliceSize {
-			sliceSize = maxMetricsSliceSize
-		}
-
-		for i := 0; i < len(familyMetrics); i += sliceSize {
-			var slice []*dto.Metric
-			if i+sliceSize < len(familyMetrics) {
-				slice = familyMetrics[i : i+sliceSize]
-			} else {
-				slice = familyMetrics[i:]
-			}
-			wg.Add(1)
-
-			go func(idMetric int, metrics []*dto.Metric) {
-				for _, metric := range metrics {
-					m, ok := mapping.InfoMetrics[family.GetName()]
-					// Ignore unknown metrics
-					if !ok {
-						continue
-					}
-
-					field := m.GetField()
-					value := m.GetValue(metric)
-
-					// Ignore retrieval errors (bad conf)
-					if value == nil {
-						continue
-					}
-
-					// Apply extra options
-					allLabels := getLabels(metric)
-					for _, option := range m.GetOptions() {
-						field, value, allLabels = option.Process(field, value, allLabels)
-					}
-
-					primaryKeyLabels, secondaryKeyLabels, labels := getLabelsByType(mapping, allLabels)
-					labels.DeepUpdate(primaryKeyLabels)
-					event := eventsMap.getEvent(primaryKeyLabels, secondaryKeyLabels)
-					if event != nil {
-						eventsMap.updateEvent(event, "", nil, labels)
-					} else {
-						// No matching event found!
-						// Add metrics that have additional labels for later processing only
-						if primaryKeyLabels.String() != labels.String() {
-							infoMetricsMutex.Lock()
-							infoMetrics = append(infoMetrics, &infoMetricData{
-								Labels: primaryKeyLabels,
-								Meta:   labels,
-							})
-							infoMetricsMutex.Unlock()
-						}
-					}
-				}
-				wg.Done()
-			}(i, slice)
-		}
-		wg.Wait()
+	infoMetrics := infoMetrics{
+		data:  []*infoMetricData{},
+		mutex: sync.Mutex{},
 	}
 
-	// fill info from infoMetrics
-	for _, info := range infoMetrics {
+	processFamilyMetrics(eventsMap, mapping, families, &infoMetrics)
+
+	// infoMetrics contains any InfoMetrics that have been matched yet.
+	// Find the matching event and append it wth the infoMetrics.
+	for _, info := range infoMetrics.data {
 		for _, event := range eventsMap.events {
 			found := true
 			for k, v := range info.Labels.Flatten() {
@@ -364,6 +327,12 @@ type infoMetricData struct {
 	Meta   common.MapStr
 }
 
+// infoMetrics keeps the infoMetrics data
+type infoMetrics struct {
+	data  []*infoMetricData
+	mutex sync.Mutex
+}
+
 func (p *prometheus) ReportProcessedMetrics(mapping *MetricsMapping, r mb.ReporterV2) {
 	events, err := p.GetProcessedMetrics(mapping)
 	if err != nil {
@@ -385,6 +354,7 @@ type eventsMaps struct {
 func (e *eventsMaps) getOrCreateEvent(primaryLabels common.MapStr, secondaryLabels common.MapStr) (bool, common.MapStr) {
 	pHash := primaryLabels.String()
 	e.mapMutex.Lock()
+	defer e.mapMutex.Unlock()
 	res, found := e.events[pHash]
 
 	if !found {
@@ -396,7 +366,6 @@ func (e *eventsMaps) getOrCreateEvent(primaryLabels common.MapStr, secondaryLabe
 		}
 	}
 
-	defer e.mapMutex.Unlock()
 	return !found, res
 
 }
@@ -404,6 +373,7 @@ func (e *eventsMaps) getOrCreateEvent(primaryLabels common.MapStr, secondaryLabe
 func (e *eventsMaps) getEvent(primaryLabels common.MapStr, secondaryLabels common.MapStr) common.MapStr {
 	pHash := primaryLabels.String()
 	e.mapMutex.Lock()
+	defer e.mapMutex.Unlock()
 	res, found := e.events[pHash]
 	if !found {
 		if len(secondaryLabels) != 0 {
@@ -419,17 +389,16 @@ func (e *eventsMaps) getEvent(primaryLabels common.MapStr, secondaryLabels commo
 		res = nil
 	}
 
-	defer e.mapMutex.Unlock()
 	return res
 }
 
 func (e *eventsMaps) updateEvent(event common.MapStr, field string, value interface{}, labels common.MapStr) {
 	e.eventMutex.Lock()
+	defer e.eventMutex.Unlock()
 	if field != "" && value != nil {
 		event.Put(field, value)
 	}
 	event.DeepUpdate(labels)
-	e.eventMutex.Unlock()
 }
 
 func getLabels(metric *dto.Metric) common.MapStr {
