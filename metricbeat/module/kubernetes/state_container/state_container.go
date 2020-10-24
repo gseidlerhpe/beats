@@ -40,9 +40,8 @@ var (
 
 	// Mapping of state metrics
 	mapping = &p.MetricsMapping{
+		FamilyPrefix: []string{"kube_pod_container", "kube_pod_info"},
 		Metrics: map[string]p.MetricMap{
-			"kube_pod_info":                                     p.InfoMetric(),
-			"kube_pod_container_info":                           p.InfoMetric(),
 			"kube_pod_container_resource_limits_cpu_cores":      p.Metric("cpu.limit.cores"),
 			"kube_pod_container_resource_requests_cpu_cores":    p.Metric("cpu.request.cores"),
 			"kube_pod_container_resource_limits_memory_bytes":   p.Metric("memory.limit.bytes"),
@@ -56,6 +55,10 @@ var (
 			"kube_pod_container_status_terminated_reason":       p.LabelMetric("status.reason", "reason"),
 			"kube_pod_container_status_waiting_reason":          p.LabelMetric("status.reason", "reason"),
 		},
+		InfoMetrics: map[string]p.MetricMap{
+			"kube_pod_info":           p.InfoMetric(),
+			"kube_pod_container_info": p.InfoMetric(),
+		},
 
 		Labels: map[string]p.LabelMap{
 			"pod":       p.KeyLabel(mb.ModuleDataKey + ".pod.name"),
@@ -65,6 +68,18 @@ var (
 			"node":         p.Label(mb.ModuleDataKey + ".node.name"),
 			"container_id": p.Label("id"),
 			"image":        p.Label("image"),
+		},
+
+		KeyLabels: p.KeyLabelKeys{
+			Primary: map[string]struct{}{
+				"pod":       struct{}{},
+				"namespace": struct{}{},
+				"container": struct{}{},
+			},
+			Secondary: map[string]struct{}{
+				"pod":       struct{}{},
+				"namespace": struct{}{},
+			},
 		},
 
 		ExtraFields: map[string]string{
@@ -111,7 +126,6 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 // descriptive error must be returned.
 func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 	m.enricher.Start()
-
 	events, err := m.prometheus.GetProcessedMetrics(mapping)
 	if err != nil {
 		return nil, err

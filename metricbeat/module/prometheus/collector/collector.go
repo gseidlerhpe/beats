@@ -77,7 +77,7 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 }
 
 func (m *MetricSet) Fetch() ([]common.MapStr, error) {
-	families, err := m.prometheus.GetFamilies()
+	families, err := m.prometheus.GetFamilies(nil)
 
 	if err != nil {
 		return nil, fmt.Errorf("Unable to decode response from prometheus endpoint")
