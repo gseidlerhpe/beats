@@ -18,6 +18,7 @@
 package prometheus
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -43,6 +44,14 @@ type MetricMap interface {
 type MetricOption interface {
 	// Process a tuple of field, value and labels from a metric, return the same tuple updated
 	Process(field string, value interface{}, labels common.MapStr) (string, interface{}, common.MapStr)
+}
+
+// OpFilterMap only processes metrics matching the given filter
+func OpFilterMap(label string, filterMap map[string]string) MetricOption {
+	return opFilterMap{
+		label:     label,
+		filterMap: filterMap,
+	}
 }
 
 // OpFilter only processes metrics matching the given filter
@@ -256,6 +265,28 @@ func (o opFilter) Process(field string, value interface{}, labels common.MapStr)
 		}
 	}
 	return field, value, labels
+}
+
+type opFilterMap struct {
+	label     string
+	filterMap map[string]string
+}
+
+// Called by the Prometheus helper to apply extra options on retrieved metrics
+// Check whether the value of the specified label is allowed and, if yes, return the metric via the specified mapped field
+// Else, if the specified label does not match the filter, return nil
+// This is useful in cases where multiple Metricbeat fields need to be defined per Prometheus metric, based on label values
+func (o opFilterMap) Process(field string, value interface{}, labels common.MapStr) (string, interface{}, common.MapStr) {
+	for k, v := range o.filterMap {
+		if labels[o.label] == k {
+			if field == "" {
+				return v, value, labels
+			} else {
+				return fmt.Sprintf("%v.%v", field, v), value, labels
+			}
+		}
+	}
+	return "", nil, nil
 }
 
 type opLowercaseValue struct{}
