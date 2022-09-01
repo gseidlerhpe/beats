@@ -42,6 +42,18 @@ var (
 	mapping = &p.MetricsMapping{
 		FamilyPrefix: []string{"kube_pod_container", "kube_pod_info"},
 		Metrics: map[string]p.MetricMap{
+			"kube_pod_container_resource_requests": p.Metric("", p.OpFilterMap(
+				"resource", map[string]string{
+					"cpu":    "cpu.request.cores",
+					"memory": "memory.request.bytes",
+				},
+			)),
+			"kube_pod_container_resource_limits": p.Metric("", p.OpFilterMap(
+				"resource", map[string]string{
+					"cpu":    "cpu.limit.cores",
+					"memory": "memory.limit.bytes",
+				},
+			)),
 			"kube_pod_container_resource_limits_cpu_cores":      p.Metric("cpu.limit.cores"),
 			"kube_pod_container_resource_requests_cpu_cores":    p.Metric("cpu.request.cores"),
 			"kube_pod_container_resource_limits_memory_bytes":   p.Metric("memory.limit.bytes"),
